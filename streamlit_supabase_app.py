@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 from supabase import create_client, Client
+from streamlit.errors import StreamlitSecretNotFoundError
+from typing import Optional
 
 # ==========================================
 # CẤU HÌNH TRANG VÀ KẾT NỐI SUPABASE
@@ -12,23 +14,33 @@ st.set_page_config(
     layout="wide"
 )
 
-# Khởi tạo kết nối Supabase từ st.secrets hoặc cấu hình trực tiếp
+# Tạo lại kết nối khi cấu hình thay đổi, nhưng không cache trạng thái thiếu cấu hình.
 @st.cache_resource
-def init_supabase() -> Client:
-    # Lấy thông tin từ st.secrets hoặc fallback về chuỗi cấu hình
-    supabase_url = st.secrets.get("SUPABASE_URL", "")
-    supabase_key = st.secrets.get("SUPABASE_KEY", "")
-    
+def create_supabase_client(supabase_url: str, supabase_key: str) -> Client:
+    return create_client(supabase_url, supabase_key)
+
+
+def init_supabase() -> Optional[Client]:
+    try:
+        supabase_url = st.secrets.get("SUPABASE_URL", "")
+        supabase_key = st.secrets.get("SUPABASE_KEY", "")
+    except StreamlitSecretNotFoundError:
+        supabase_url = ""
+        supabase_key = ""
+
     if not supabase_url or not supabase_key:
-        st.warning("⚠️ Chưa cấu hình Supabase URL hoặc API Key trong `.streamlit/secrets.toml`.")
-        # Cho phép nhập tạm từ sidebar nếu chưa cấu hình file secrets
+        st.warning(
+            "⚠️ Chưa đọc được Supabase URL hoặc API Key. "
+            "Hãy kiểm tra `.streamlit/secrets.toml` và chạy ứng dụng từ thư mục dự án."
+        )
         with st.sidebar.expander("🔑 Cấu hình kết nối Supabase"):
             supabase_url = st.text_input("Supabase URL", value=supabase_url, type="default")
             supabase_key = st.text_input("Supabase Key (Anon/Service)", value=supabase_key, type="password")
-            
+
     if supabase_url and supabase_key:
-        return create_client(supabase_url, supabase_key)
+        return create_supabase_client(supabase_url, supabase_key)
     return None
+
 
 supabase = init_supabase()
 TABLE_NAME = "order"  # Tên bảng trong Supabase: 'order'
