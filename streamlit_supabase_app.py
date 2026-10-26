@@ -23,19 +23,20 @@ def create_supabase_client(supabase_url: str, supabase_key: str) -> Client:
 def init_supabase() -> Optional[Client]:
     try:
         supabase_url = st.secrets.get("SUPABASE_URL", "")
-        supabase_key = st.secrets.get("SUPABASE_KEY", "")
+        supabase_key = (
+            st.secrets.get("SUPABASE_SECRET_KEY", "")
+            or st.secrets.get("SUPABASE_SERVICE_ROLE_KEY", "")
+        )
     except StreamlitSecretNotFoundError:
         supabase_url = ""
         supabase_key = ""
 
     if not supabase_url or not supabase_key:
         st.warning(
-            "⚠️ Chưa đọc được Supabase URL hoặc API Key. "
-            "Hãy kiểm tra `.streamlit/secrets.toml` và chạy ứng dụng từ thư mục dự án."
+            "⚠️ Chưa cấu hình khóa bí mật Supabase server-side. "
+            "Thêm `SUPABASE_SECRET_KEY` (hoặc `SUPABASE_SERVICE_ROLE_KEY`) vào "
+            "`.streamlit/secrets.toml`. Không dùng khóa publishable/anon cho ứng dụng nội bộ."
         )
-        with st.sidebar.expander("🔑 Cấu hình kết nối Supabase"):
-            supabase_url = st.text_input("Supabase URL", value=supabase_url, type="default")
-            supabase_key = st.text_input("Supabase Key (Anon/Service)", value=supabase_key, type="password")
 
     if supabase_url and supabase_key:
         return create_supabase_client(supabase_url, supabase_key)
