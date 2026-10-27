@@ -103,8 +103,15 @@ def delete_order(order_id):
 # ==========================================
 st.title("📦 Hệ Thống Quản Lý Đơn Hàng")
 
-# Section: Thêm Đơn Hàng Mới (trên màn hình chính)
-with st.expander("➕ Thêm Đơn Hàng Mới", expanded=False):
+# 1) Nút Add ở trên danh sách để điều hướng đến màn hình nhập liệu
+if "show_add" not in st.session_state:
+    st.session_state.show_add = False
+
+if st.button("➕ Thêm Đơn Hàng", key="btn_show_add"):
+    st.session_state.show_add = True
+
+# 2) Màn hình nhập liệu (hiện khi nhấn nút Add)
+if st.session_state.show_add:
     with st.form("form_add_order"):
         customer_name = st.text_input("Tên khách hàng", key="add_customer")
         product = st.text_input("Tên sản phẩm", key="add_product")
@@ -118,7 +125,6 @@ with st.expander("➕ Thêm Đơn Hàng Mới", expanded=False):
         status = st.selectbox("Trạng thái", status_list, key="add_status")
         
         btn_add = st.form_submit_button("➕ Thêm Đơn Hàng", use_container_width=True)
-        
         if btn_add:
             if not supabase:
                 st.error("Chưa kết nối Supabase!")
@@ -126,85 +132,70 @@ with st.expander("➕ Thêm Đơn Hàng Mới", expanded=False):
                 success, msg = insert_order(customer_name, product, quantity, price, order_date, status)
                 if success:
                     st.success("✅ Đã thêm đơn hàng mới thành công!")
+                    st.session_state.show_add = False
                     st.experimental_rerun()
                 else:
                     st.error(f"❌ Thêm đơn hàng thất bại: {msg}")
 
+# 3) Hiển thị danh sách Đơn hàng với nút chỉnh sửa cho từng hàng
 st.markdown("---")
 
-# Section: Danh Sách Đơn Hàng
 st.header("📜 Danh Sách Đơn Hàng")
 
 orders = fetch_orders()
 if orders:
-    df = pd.DataFrame(orders)
-    # Reorder columns to have 'id' first for better visibility
-    df = df[["id", "customer_name", "product", "quantity", "price", "order_date", "status"]]
-    st.dataframe(df, use_container_width=True, hide_index=True)
-    
+    # Hiển thị danh sách từng đơn hàng kèm nút chỉnh sửa (✏️)
+    for o in orders:
+        cols = st.columns([4, 1])
+        with cols[0]:
+            st.markdown(f"**ID {o['id']} - {o.get('customer_name', '')} ({o.get('product', '')})**")
+            st.write(f"Số lượng: {o.get('quantity', '')}  |  Đơn giá: {o.get('price', '')}  |  Ngày đặt: {o.get('order_date', '')}  |  Trạng thái: {o.get('status', '')}")
+        with cols[1]:
+            if st.button("✏️", key=f"edit_{o['id']}"):
+                st.session_state.edit_id = o['id']
+                st.session_state.selected_order = o
+                st.session_state.show_edit = True
     st.markdown("---")
-    
-    # Section: Quản Lý Đơn Hàng
-    st.subheader("🛠️ Quản Lý Đơn Hàng")
-    
-    # Create a dictionary for easier lookup
-    order_dict = {f"ID {o['id']} - {o.get('customer_name', '')} ({o.get('product', '')})": o for o in orders}
-    selected_label = st.selectbox("Chọn đơn hàng cần sửa hoặc xóa:", list(order_dict.keys()))
-    selected_order = order_dict[selected_label]
-    
-    order_id = selected_order['id']
-    
-    st.write(f"Đang chọn đơn hàng: **ID {order_id}**")
-    
-    tab_edit, tab_delete = st.tabs(["✏️ Chỉnh sửa thông tin", "🗑️ Xóa đơn hàng"])
-    
-    # TAB SỬA
-    with tab_edit:
-        with st.form("form_edit_order"):
-            col1, col2 = st.columns(2)
-            with col1:
-                edit_customer = st.text_input("Tên khách hàng", value=selected_order.get('customer_name', ''))
-                edit_product = st.text_input("Tên sản phẩm", value=selected_order.get('product', ''))
-                current_date_val = selected_order.get('order_date')
-                try:
-                    parsed_date = datetime.strptime(str(current_date_val), "%Y-%m-%d").date()
-                except Exception:
-                    parsed_date = date.today()
-                edit_date = st.date_input("Ngày đặt hàng", value=parsed_date)
-            with col2:
-                edit_quantity = st.number_input("Số lượng", min_value=1, value=int(selected_order.get('quantity', 1)), step=1)
-                edit_price = st.number_input("Đơn giá (VNĐ)", min_value=0, value=int(selected_order.get('price', 0)), step=10000)
-                status_list = ["pending", "completed", "cancelled"]
-                current_status = selected_order.get('status', 'pending')
-                default_status_idx = status_list.index(current_status) if current_status in status_list else 0
-                edit_status = st.selectbox("Trạng thái", status_list, index=default_status_idx)
-            btn_update = st.form_submit_button("💾 Cập nhật thay đổi", use_container_width=True)
-            if btn_update:
-                if not supabase:
-                    st.error("Chưa kết nối Supabase!")
-                else:
-                    success, msg = update_order(
-                        order_id, edit_customer, edit_product, edit_quantity, edit_price, edit_date, edit_status
-                    )
-                    if success:
-                        st.success(f"✅ Đã cập nhật thành công đơn hàng ID {order_id}!")
-                        st.experimental_rerun()
-                    else:
-                        st.error(f"❌ Cập nhật thất bại: {msg}")
+else:
+    st.info("Chưa có đơn hàng. Hãy thêm một đơn hàng mới!")
 
-    # TAB XÓA
-    with tab_delete:
-        st.warning(f"⚠️ Cảnh báo: Hành động này sẽ xóa vĩnh viễn đơn hàng **ID {order_id}** ({selected_order.get('customer_name')} - {selected_order.get('product')}) khỏi bảng `{TABLE_NAME}`!")
-        confirm_delete = st.checkbox("Tôi xác nhận muốn xóa đơn hàng này.")
-        if st.button("🗑️ Xác nhận xóa", type="primary", disabled=not confirm_delete):
+# 4) Màn hình chỉnh sửa (khi nhấn nút Edit trên danh sách)
+if "show_edit" in st.session_state and st.session_state.get("show_edit") and st.session_state.get("selected_order"):
+    sel = st.session_state.selected_order
+    order_id = sel['id']
+    st.subheader(f"✏️ Chỉnh sửa đơn hàng ID {order_id}")
+    with st.form("form_edit_order"):
+        col1, col2 = st.columns(2)
+        with col1:
+            edit_customer = st.text_input("Tên khách hàng", value=sel.get('customer_name', ''))
+            edit_product = st.text_input("Tên sản phẩm", value=sel.get('product', ''))
+            current_date_val = sel.get('order_date')
+            try:
+                parsed_date = datetime.strptime(str(current_date_val), "%Y-%m-%d").date()
+            except Exception:
+                parsed_date = date.today()
+            edit_date = st.date_input("Ngày đặt hàng", value=parsed_date)
+        with col2:
+            edit_quantity = st.number_input("Số lượng", min_value=1, value=int(sel.get('quantity', 1)), step=1)
+            edit_price = st.number_input("Đơn giá (VNĐ)", min_value=0, value=int(sel.get('price', 0)), step=10000)
+            status_list = ["pending", "completed", "cancelled"]
+            current_status = sel.get('status', 'pending')
+            default_status_idx = status_list.index(current_status) if current_status in status_list else 0
+            edit_status = st.selectbox("Trạng thái", status_list, index=default_status_idx)
+        btn_update = st.form_submit_button("💾 Cập nhật thay đổi", use_container_width=True)
+        if btn_update:
             if not supabase:
                 st.error("Chưa kết nối Supabase!")
             else:
-                success, msg = delete_order(order_id)
+                success, msg = update_order(
+                    order_id, edit_customer, edit_product, edit_quantity, edit_price, edit_date, edit_status
+                )
                 if success:
-                    st.success(f"✅ Đã xóa đơn hàng ID {order_id} thành công!")
+                    st.success(f"✅ Đã cập nhật thành công đơn hàng ID {order_id}!")
+                    st.session_state.show_edit = False
+                    st.session_state.selected_order = None
+                    st.session_state.edit_id = None
                     st.experimental_rerun()
                 else:
-                    st.error(f"❌ Xóa thất bại: {msg}")
-else:
-    st.info("Chưa có đơn hàng nào. Hãy thêm một đơn hàng mới!")
+                    st.error(f"❌ Cập nhật thất bại: {msg}")
+
