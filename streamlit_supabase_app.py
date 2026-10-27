@@ -19,7 +19,6 @@ st.set_page_config(
 def create_supabase_client(supabase_url: str, supabase_key: str) -> Client:
     return create_client(supabase_url, supabase_key)
 
-
 def init_supabase() -> Optional[Client]:
     try:
         supabase_url = st.secrets.get("SUPABASE_URL", "")
@@ -41,7 +40,6 @@ def init_supabase() -> Optional[Client]:
     if supabase_url and supabase_key:
         return create_supabase_client(supabase_url, supabase_key)
     return None
-
 
 supabase = init_supabase()
 TABLE_NAME = "order"  # Tên bảng trong Supabase: 'order'
@@ -101,191 +99,112 @@ def delete_order(order_id):
         return False, str(e)
 
 # ==========================================
-# ĐIỀU HƯỚNG GIAO DIỆN CHÍNH
+# GIAO DIỆN NGƯỜI DÙNG
 # ==========================================
-st.sidebar.title("📦 Quản Lý Đơn Hàng")
-menu = st.sidebar.radio(
-    "Chọn màn hình chức năng:",
-    ["📚 Thư viện đơn hàng", "➕ Nhập liệu đơn hàng mới", "✏️ Chỉnh sửa & Xóa đơn hàng"]
-)
+st.title("📦 Hệ Thống Quản Lý Đơn Hàng")
 
-# Hiển thị trạng thái kết nối
-if supabase:
-    st.sidebar.success(f"🟢 Đã kết nối Supabase (Bảng: `{TABLE_NAME}`)")
-else:
-    st.sidebar.error("🔴 Chưa kết nối Supabase")
-
-# ------------------------------------------
-# 1. MÀN HÌNH THƯ VIỆN ĐƠN HÀNG (READ)
-# ------------------------------------------
-if menu == "📚 Thư viện đơn hàng":
-    st.header("📚 Thư Viện & Danh Sách Đơn Hàng")
-    
-    orders = fetch_orders()
-    
-    if orders:
-        df = pd.DataFrame(orders)
+# Section: Thêm Đơn Hàng Mới (trên màn hình chính)
+with st.expander("➕ Thêm Đơn Hàng Mới", expanded=False):
+    with st.form("form_add_order"):
+        customer_name = st.text_input("Tên khách hàng", key="add_customer")
+        product = st.text_input("Tên sản phẩm", key="add_product")
+        col1_add, col2_add = st.columns(2)
+        with col1_add:
+            quantity = st.number_input("Số lượng", min_value=1, value=1, step=1, key="add_quantity")
+        with col2_add:
+            price = st.number_input("Đơn giá (VNĐ)", min_value=0, value=100000, step=10000, key="add_price")
+        order_date = st.date_input("Ngày đặt hàng", value=date.today(), key="add_order_date")
+        status_list = ["pending", "completed", "cancelled"]
+        status = st.selectbox("Trạng thái", status_list, key="add_status")
         
-        # Thống kê nhanh
-        col1, col2, col3, col4 = st.columns(4)
-        total_orders = len(df)
-        total_revenue = (df['quantity'] * df['price']).sum() if 'quantity' in df.columns and 'price' in df.columns else 0
-        completed_orders = len(df[df['status'] == 'completed']) if 'status' in df.columns else 0
-        pending_orders = len(df[df['status'] == 'pending']) if 'status' in df.columns else 0
+        btn_add = st.form_submit_button("➕ Thêm Đơn Hàng", use_container_width=True)
         
-        col1.metric("Tổng đơn hàng", f"{total_orders}")
-        col2.metric("Tổng doanh thu (VNĐ)", f"{total_revenue:,.0f} đ")
-        col3.metric("Đã hoàn thành", f"{completed_orders}")
-        col4.metric("Chờ xử lý", f"{pending_orders}")
-        
-        st.divider()
-        
-        # Bộ lọc tìm kiếm
-        filter_col1, filter_col2 = st.columns([2, 1])
-        with filter_col1:
-            search_query = st.text_input("🔍 Tìm theo tên khách hàng hoặc sản phẩm:")
-        with filter_col2:
-            status_options = ["Tất cả"] + sorted(list(df['status'].dropna().unique())) if 'status' in df.columns else ["Tất cả"]
-            selected_status = st.selectbox("Lọc theo trạng thái:", status_options)
-            
-        # Áp dụng bộ lọc
-        filtered_df = df.copy()
-        if search_query:
-            filtered_df = filtered_df[
-                filtered_df['customer_name'].astype(str).str.contains(search_query, case=False, na=False) |
-                filtered_df['product'].astype(str).str.contains(search_query, case=False, na=False)
-            ]
-        if selected_status != "Tất cả":
-            filtered_df = filtered_df[filtered_df['status'] == selected_status]
-            
-        # Tính thành tiền hiển thị
-        if 'quantity' in filtered_df.columns and 'price' in filtered_df.columns:
-            filtered_df['total_amount'] = filtered_df['quantity'] * filtered_df['price']
-
-        st.subheader(f"Danh sách kết quả ({len(filtered_df)} đơn)")
-        st.dataframe(
-            filtered_df,
-            use_container_width=True,
-            column_config={
-                "id": st.column_config.NumberColumn("ID", format="%d"),
-                "customer_name": "Tên khách hàng",
-                "product": "Sản phẩm",
-                "quantity": st.column_config.NumberColumn("Số lượng", format="%d"),
-                "price": st.column_config.NumberColumn("Đơn giá (VNĐ)", format="%d đ"),
-                "total_amount": st.column_config.NumberColumn("Thành tiền (VNĐ)", format="%d đ"),
-                "order_date": "Ngày đặt",
-                "status": st.column_config.TextColumn("Trạng thái")
-            },
-            hide_index=True
-        )
-    else:
-        st.info(f"Chưa có đơn hàng nào hoặc chưa kết nối được với bảng `{TABLE_NAME}` trong Supabase.")
-
-# ------------------------------------------
-# 2. MÀN HÌNH NHẬP LIỆU (CREATE)
-# ------------------------------------------
-elif menu == "➕ Nhập liệu đơn hàng mới":
-    st.header("➕ Nhập Liệu Đơn Hàng Mới")
-    st.write(f"Điền thông tin bên dưới để lưu đơn hàng mới vào bảng `{TABLE_NAME}` trên Supabase.")
-    
-    with st.form("form_create_order", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            customer_name = st.text_input("Tên khách hàng (*)", placeholder="Ví dụ: Nguyen Van A")
-            product = st.text_input("Tên sản phẩm (*)", placeholder="Ví dụ: Ao thun")
-            order_date = st.date_input("Ngày đặt hàng", value=date.today())
-        with col2:
-            quantity = st.number_input("Số lượng (*)", min_value=1, value=1, step=1)
-            price = st.number_input("Đơn giá (VNĐ) (*)", min_value=0, value=100000, step=10000)
-            status = st.selectbox("Trạng thái đơn hàng", ["pending", "completed", "cancelled"])
-            
-        submitted = st.form_submit_button("💾 Lưu đơn hàng", use_container_width=True)
-        
-        if submitted:
-            if not customer_name.strip() or not product.strip():
-                st.error("Vui lòng điền đầy đủ Tên khách hàng và Sản phẩm!")
-            elif not supabase:
-                st.error("Chưa kết nối Supabase, không thể lưu dữ liệu!")
+        if btn_add:
+            if not supabase:
+                st.error("Chưa kết nối Supabase!")
             else:
                 success, msg = insert_order(customer_name, product, quantity, price, order_date, status)
                 if success:
-                    st.success(f"✅ Đã thêm đơn hàng thành công vào bảng `{TABLE_NAME}`!")
-                    st.balloons()
+                    st.success("✅ Đã thêm đơn hàng mới thành công!")
+                    st.experimental_rerun()
                 else:
                     st.error(f"❌ Thêm đơn hàng thất bại: {msg}")
 
-# ------------------------------------------
-# 3. MÀN HÌNH SỬA & XÓA (UPDATE & DELETE)
-# ------------------------------------------
-elif menu == "✏️ Chỉnh sửa & Xóa đơn hàng":
-    st.header("✏️ Chỉnh Sửa & Xóa Đơn Hàng")
-    
-    orders = fetch_orders()
-    if not orders:
-        st.info("Hiện không có đơn hàng nào để chỉnh sửa hoặc xóa.")
-    else:
-        # Chọn đơn hàng cần thao tác
-        order_dict = {f"ID {o['id']} - {o.get('customer_name', '')} ({o.get('product', '')})": o for o in orders}
-        selected_label = st.selectbox("Chọn đơn hàng cần sửa hoặc xóa:", list(order_dict.keys()))
-        selected_order = order_dict[selected_label]
-        
-        order_id = selected_order['id']
-        
-        st.write(f"Đang chọn đơn hàng: **ID {order_id}**")
-        
-        tab_edit, tab_delete = st.tabs(["✏️ Chỉnh sửa thông tin", "🗑️ Xóa đơn hàng"])
-        
-        # TAB SỬA
-        with tab_edit:
-            with st.form("form_edit_order"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    edit_customer = st.text_input("Tên khách hàng", value=selected_order.get('customer_name', ''))
-                    edit_product = st.text_input("Tên sản phẩm", value=selected_order.get('product', ''))
-                    # Chuyển đổi chuỗi ngày thành datetime.date
-                    current_date_val = selected_order.get('order_date')
-                    try:
-                        parsed_date = datetime.strptime(str(current_date_val), "%Y-%m-%d").date()
-                    except Exception:
-                        parsed_date = date.today()
-                    edit_date = st.date_input("Ngày đặt hàng", value=parsed_date)
-                    
-                with col2:
-                    edit_quantity = st.number_input("Số lượng", min_value=1, value=int(selected_order.get('quantity', 1)), step=1)
-                    edit_price = st.number_input("Đơn giá (VNĐ)", min_value=0, value=int(selected_order.get('price', 0)), step=10000)
-                    
-                    status_list = ["pending", "completed", "cancelled"]
-                    current_status = selected_order.get('status', 'pending')
-                    default_status_idx = status_list.index(current_status) if current_status in status_list else 0
-                    edit_status = st.selectbox("Trạng thái", status_list, index=default_status_idx)
-                    
-                btn_update = st.form_submit_button("💾 Cập nhật thay đổi", use_container_width=True)
-                
-                if btn_update:
-                    if not supabase:
-                        st.error("Chưa kết nối Supabase!")
-                    else:
-                        success, msg = update_order(
-                            order_id, edit_customer, edit_product, edit_quantity, edit_price, edit_date, edit_status
-                        )
-                        if success:
-                            st.success(f"✅ Đã cập nhật thành công đơn hàng ID {order_id}!")
-                            st.rerun()
-                        else:
-                            st.error(f"❌ Cập nhật thất bại: {msg}")
+st.markdown("---")
 
-        # TAB XÓA
-        with tab_delete:
-            st.warning(f"⚠️ Cảnh báo: Hành động này sẽ xóa vĩnh viễn đơn hàng **ID {order_id}** ({selected_order.get('customer_name')} - {selected_order.get('product')}) khỏi bảng `{TABLE_NAME}`!")
-            confirm_delete = st.checkbox("Tôi xác nhận muốn xóa đơn hàng này.")
-            
-            if st.button("🗑️ Xác nhận xóa", type="primary", disabled=not confirm_delete):
+# Section: Danh Sách Đơn Hàng
+st.header("📜 Danh Sách Đơn Hàng")
+
+orders = fetch_orders()
+if orders:
+    df = pd.DataFrame(orders)
+    # Reorder columns to have 'id' first for better visibility
+    df = df[["id", "customer_name", "product", "quantity", "price", "order_date", "status"]]
+    st.dataframe(df, use_container_width=True, hide_index=True)
+    
+    st.markdown("---")
+    
+    # Section: Quản Lý Đơn Hàng
+    st.subheader("🛠️ Quản Lý Đơn Hàng")
+    
+    # Create a dictionary for easier lookup
+    order_dict = {f"ID {o['id']} - {o.get('customer_name', '')} ({o.get('product', '')})": o for o in orders}
+    selected_label = st.selectbox("Chọn đơn hàng cần sửa hoặc xóa:", list(order_dict.keys()))
+    selected_order = order_dict[selected_label]
+    
+    order_id = selected_order['id']
+    
+    st.write(f"Đang chọn đơn hàng: **ID {order_id}**")
+    
+    tab_edit, tab_delete = st.tabs(["✏️ Chỉnh sửa thông tin", "🗑️ Xóa đơn hàng"])
+    
+    # TAB SỬA
+    with tab_edit:
+        with st.form("form_edit_order"):
+            col1, col2 = st.columns(2)
+            with col1:
+                edit_customer = st.text_input("Tên khách hàng", value=selected_order.get('customer_name', ''))
+                edit_product = st.text_input("Tên sản phẩm", value=selected_order.get('product', ''))
+                current_date_val = selected_order.get('order_date')
+                try:
+                    parsed_date = datetime.strptime(str(current_date_val), "%Y-%m-%d").date()
+                except Exception:
+                    parsed_date = date.today()
+                edit_date = st.date_input("Ngày đặt hàng", value=parsed_date)
+            with col2:
+                edit_quantity = st.number_input("Số lượng", min_value=1, value=int(selected_order.get('quantity', 1)), step=1)
+                edit_price = st.number_input("Đơn giá (VNĐ)", min_value=0, value=int(selected_order.get('price', 0)), step=10000)
+                status_list = ["pending", "completed", "cancelled"]
+                current_status = selected_order.get('status', 'pending')
+                default_status_idx = status_list.index(current_status) if current_status in status_list else 0
+                edit_status = st.selectbox("Trạng thái", status_list, index=default_status_idx)
+            btn_update = st.form_submit_button("💾 Cập nhật thay đổi", use_container_width=True)
+            if btn_update:
                 if not supabase:
                     st.error("Chưa kết nối Supabase!")
                 else:
-                    success, msg = delete_order(order_id)
+                    success, msg = update_order(
+                        order_id, edit_customer, edit_product, edit_quantity, edit_price, edit_date, edit_status
+                    )
                     if success:
-                        st.success(f"✅ Đã xóa đơn hàng ID {order_id} thành công!")
-                        st.rerun()
+                        st.success(f"✅ Đã cập nhật thành công đơn hàng ID {order_id}!")
+                        st.experimental_rerun()
                     else:
-                        st.error(f"❌ Xóa thất bại: {msg}")
+                        st.error(f"❌ Cập nhật thất bại: {msg}")
+
+    # TAB XÓA
+    with tab_delete:
+        st.warning(f"⚠️ Cảnh báo: Hành động này sẽ xóa vĩnh viễn đơn hàng **ID {order_id}** ({selected_order.get('customer_name')} - {selected_order.get('product')}) khỏi bảng `{TABLE_NAME}`!")
+        confirm_delete = st.checkbox("Tôi xác nhận muốn xóa đơn hàng này.")
+        if st.button("🗑️ Xác nhận xóa", type="primary", disabled=not confirm_delete):
+            if not supabase:
+                st.error("Chưa kết nối Supabase!")
+            else:
+                success, msg = delete_order(order_id)
+                if success:
+                    st.success(f"✅ Đã xóa đơn hàng ID {order_id} thành công!")
+                    st.experimental_rerun()
+                else:
+                    st.error(f"❌ Xóa thất bại: {msg}")
+else:
+    st.info("Chưa có đơn hàng nào. Hãy thêm một đơn hàng mới!")
